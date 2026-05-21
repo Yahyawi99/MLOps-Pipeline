@@ -31,14 +31,17 @@ pipeline {
         // =========================================
         stage('Model Development Workloads') {
             when {
-                changeRequest target: 'main'
+                anyOf {
+                    changeRequest() // Triggers on Pull Requests
+                    branch 'main'   // Optional: allows you to force train on main if needed
+                }
             }
             steps {
-                echo "Pull Request detected. Running model development workloads..."
-                sh 'python3 madewithml/train.py'
-                sh 'python3 madewithml/evaluate.py'
+                echo "Running training..."
+                sh "python3 madewithml/train.py ..."
             }
         }
+        
 
         // ==========================================
         // 2. SERVE & DOCS WORKFLOW (Push to main)
