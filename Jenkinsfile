@@ -12,8 +12,10 @@ pipeline {
         stage('Setup Python Venv') {
             steps {
                 echo "Creating Python Virtual Environment..."
-                // Create a venv named 'venv'
                 sh 'python3 -m venv venv'
+                
+                // THE FIX: Install foundational build tools first
+                sh './venv/bin/pip install --upgrade pip setuptools wheel'
             }
         }
 
