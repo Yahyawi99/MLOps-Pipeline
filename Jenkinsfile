@@ -32,13 +32,19 @@ pipeline {
         stage('Model Development Workloads') {
             when {
                 anyOf {
-                    changeRequest() // Triggers on Pull Requests
-                    branch 'main'   // Optional: allows you to force train on main if needed
+                    changeRequest()
+                    branch 'main'
                 }
             }
             steps {
                 echo "Running training..."
-                sh "python3 madewithml/train.py ..."
+                sh '''
+                    python3 madewithml/train.py \
+                        --experiment-name "llm-classification" \
+                        --dataset-loc "https://raw.githubusercontent.com/GokuMohandas/Made-With-ML/main/datasets/dataset.csv" \
+                        --train-loop-config '{"dropout_p": 0.5, "lr": 1e-4, "lr_factor": 0.8, "lr_patience": 3, "num_epochs": 10, "batch_size": 256}' \
+                        --scaling-config '{"num_workers": 1, "use_gpu": false}'
+                '''
             }
         }
         
