@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  jenkins:
+    build: .
+    container_name: mlops_jenkins
+    restart: unless-stopped
+    privileged: true
+    user: root # Run as root to allow Docker socket access if needed later, though image defaults to jenkins
+    ports:
+      - "8080:8080"   # The Jenkins Web UI
+      - "50000:50000" # Used by attached Jenkins agents
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      # Optional: Uncomment the line below if your Jenkins pipelines need to run Docker commands themselves (Docker-in-Docker)
+      # - /var/run/docker.sock:/var/run/docker.sock 
+
+volumes:
+  jenkins_home:

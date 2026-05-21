@@ -11,11 +11,13 @@ pipeline {
         // ==========================================
         stage('Setup Python Venv') {
             steps {
-                echo "Creating Python Virtual Environment..."
-                sh 'python3 -m venv venv'
-                
-                // THE FIX: Install foundational build tools first
-                sh './venv/bin/pip install --upgrade pip setuptools wheel'
+                echo 'Creating Python Virtual Environment...'
+                sh '''
+                    # use Python 3.10 from your custom image
+                    python3 -m venv venv
+                    ./venv/bin/pip install --upgrade pip setuptools wheel
+                    ./venv/bin/pip install -r requirements.txt
+                '''
             }
         }
 
