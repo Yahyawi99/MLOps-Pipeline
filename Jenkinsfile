@@ -4,6 +4,8 @@ pipeline {
     environment {
         // Ensures Python output is sent straight to the terminal without buffering
         PYTHONUNBUFFERED = '1'
+        // Tells Python to treat the root workspace as a package directory
+        PYTHONPATH = "${WORKSPACE}"
     }
 
     stages {
@@ -34,11 +36,9 @@ pipeline {
             steps {
                 echo "Pull Request detected. Running model development workloads..."
                 
-                // Change into the madewithml directory and use global python3
-                dir('madewithml') {
-                    sh 'python3 train.py'
-                    sh 'python3 evaluate.py'
-                }
+                // Run directly from the root workspace using the folder path
+                sh 'python3 madewithml/train.py'
+                sh 'python3 madewithml/evaluate.py'
             }
         }
 
@@ -53,19 +53,16 @@ pipeline {
             steps {
                 echo "Push to main detected. Deploying application and updating docs..."
                 
-                // Run the serving script from inside its directory
-                dir('madewithml') {
-                    sh 'python3 serve.py'
-                }
+                // Run directly from the root workspace using the folder path
+                sh 'python3 madewithml/serve.py'
                 
-                // Update documentation using global python3 module execution
+                // Update documentation 
                 sh 'python3 -m mkdocs build'
             }
         }
     }
     
     post {
-        // The 'always' block cleaning up the venv has been completely removed
         success {
             echo "All workloads finished successfully!"
         }
