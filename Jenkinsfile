@@ -2,6 +2,7 @@ pipeline {
     agent any
 
     environment {
+        // Ensures Python output is sent straight to the terminal without buffering
         PYTHONUNBUFFERED = '1'
     }
 
@@ -31,12 +32,12 @@ pipeline {
             steps {
                 echo "Pull Request detected. Running model development workloads..."
                 
-                // Install dependencies into the venv
-                sh './venv/bin/pip install --no-cache-dir -r requirements.txt'
-                
-                // Run training and evaluation using the venv's Python
-                sh './venv/bin/python train.py'
-                sh './venv/bin/python evaluate.py'
+                // Change into the madewithml directory before running scripts
+                // Notice the virtual env path uses '../' to go up one level
+                dir('madewithml') {
+                    sh '../venv/bin/python train.py'
+                    sh '../venv/bin/python evaluate.py'
+                }
             }
         }
 
@@ -51,12 +52,13 @@ pipeline {
             steps {
                 echo "Push to main detected. Deploying application and updating docs..."
                 
-                sh './venv/bin/pip install --no-cache-dir -r requirements.txt'
+                // Run the serving script from inside its directory
+                dir('madewithml') {
+                    sh '../venv/bin/python serve.py'
+                }
                 
-                // Run the serving script
-                sh './venv/bin/python serve.py'
-                
-                // Update documentation
+                // Update documentation 
+                // mkdocs is executed from the root where mkdocs.yml typically lives
                 sh './venv/bin/mkdocs build'
             }
         }
@@ -64,7 +66,7 @@ pipeline {
     
     post {
         always {
-            // Clean up the virtual environment so it doesn't take up space
+            // Clean up the virtual environment so it doesn't take up disk space
             sh 'rm -rf venv'
             echo "Pipeline execution complete. Cleaned up workspace."
         }
