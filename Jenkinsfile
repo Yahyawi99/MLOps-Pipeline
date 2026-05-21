@@ -10,14 +10,18 @@ pipeline {
         // ==========================================
         // 0. ENVIRONMENT SETUP
         // ==========================================
-        stage('Setup Python Venv') {
+        stage('Install Global Dependencies') {
             steps {
-                echo 'Creating Python Virtual Environment...'
+                echo 'Installing dependencies directly into the Docker container...'
                 sh '''
-                    # use Python 3.10 from your custom image
-                    python3 -m venv venv
-                    ./venv/bin/pip install --upgrade pip setuptools wheel
-                    ./venv/bin/pip install --no-cache-dir -r requirements.txt
+                    # Install globally since we are already isolated in a container
+                    python3 -m pip install --upgrade pip setuptools wheel
+                    
+                    # Install project requirements
+                    python3 -m pip install --no-cache-dir -r requirements.txt
+                    
+                    # Force install setuptools at the end to prevent Ray issues
+                    python3 -m pip install setuptools
                 '''
             }
         }
@@ -32,11 +36,10 @@ pipeline {
             steps {
                 echo "Pull Request detected. Running model development workloads..."
                 
-                // Change into the madewithml directory before running scripts
-                // Notice the virtual env path uses '../' to go up one level
+                // Change into the madewithml directory and use global python3
                 dir('madewithml') {
-                    sh '../venv/bin/python train.py'
-                    sh '../venv/bin/python evaluate.py'
+                    sh 'python3 train.py'
+                    sh 'python3 evaluate.py'
                 }
             }
         }
@@ -54,22 +57,17 @@ pipeline {
                 
                 // Run the serving script from inside its directory
                 dir('madewithml') {
-                    sh '../venv/bin/python serve.py'
+                    sh 'python3 serve.py'
                 }
                 
-                // Update documentation 
-                // mkdocs is executed from the root where mkdocs.yml typically lives
-                sh './venv/bin/mkdocs build'
+                // Update documentation using global python3 module execution
+                sh 'python3 -m mkdocs build'
             }
         }
     }
     
     post {
-        always {
-            // Clean up the virtual environment so it doesn't take up disk space
-            sh 'rm -rf venv'
-            echo "Pipeline execution complete. Cleaned up workspace."
-        }
+        // The 'always' block cleaning up the venv has been completely removed
         success {
             echo "All workloads finished successfully!"
         }
