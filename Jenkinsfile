@@ -16,7 +16,7 @@ pipeline {
                     # use Python 3.10 from your custom image
                     python3 -m venv venv
                     ./venv/bin/pip install --upgrade pip setuptools wheel
-                    ./venv/bin/pip install -r requirements.txt
+                    ./venv/bin/pip install --no-cache-dir -r requirements.txt
                 '''
             }
         }
@@ -32,7 +32,7 @@ pipeline {
                 echo "Pull Request detected. Running model development workloads..."
                 
                 // Install dependencies into the venv
-                sh './venv/bin/pip install -r requirements.txt'
+                sh './venv/bin/pip install --no-cache-dir -r requirements.txt'
                 
                 // Run training and evaluation using the venv's Python
                 sh './venv/bin/python train.py'
@@ -51,7 +51,7 @@ pipeline {
             steps {
                 echo "Push to main detected. Deploying application and updating docs..."
                 
-                sh './venv/bin/pip install -r requirements.txt'
+                sh './venv/bin/pip install --no-cache-dir -r requirements.txt'
                 
                 // Run the serving script
                 sh './venv/bin/python serve.py'
