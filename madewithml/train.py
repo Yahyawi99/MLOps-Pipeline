@@ -1,6 +1,7 @@
 import datetime
 import json
 import os
+import pathlib
 import tempfile
 from typing import Tuple
 
@@ -202,7 +203,12 @@ def train_model(
     )
 
     # Run config
-    run_config = RunConfig(checkpoint_config=checkpoint_config, storage_path=EFS_DIR)
+    # Ray Train v2 passes storage_path to PyArrow which requires a URI on Windows.
+    # Convert plain Windows paths (e.g. C:/...) to file:/// URI format.
+    storage_path = EFS_DIR
+    if storage_path and not str(storage_path).startswith(("s3://", "gs://", "hdfs://", "file://")):
+        storage_path = pathlib.Path(storage_path).resolve().as_uri()
+    run_config = RunConfig(checkpoint_config=checkpoint_config, storage_path=storage_path)
 
     # Dataset
     ds = data.load_data(dataset_loc=dataset_loc, num_samples=train_loop_config["num_samples"])
