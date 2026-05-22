@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   jenkins:
@@ -6,22 +6,22 @@ services:
     container_name: mlops_jenkins
     restart: unless-stopped
     privileged: true
-    shm_size: '2gb'
-    user: root 
+    shm_size: "2gb"
+    user: root
     ports:
-      - "8080:8080"   # The Jenkins Web UI
+      - "8080:8080" # The Jenkins Web UI
       - "50000:50000" # Attached Jenkins agents
-      - "8000:8000"   # Exposes Ray Serve / FastAPI to your local browser
+      - "8000:8000"
     volumes:
       - jenkins_home:/var/jenkins_home
       # Optional: Uncomment the line below if your Jenkins pipelines need to run Docker commands themselves (Docker-in-Docker)
-      # - /var/run/docker.sock:/var/run/docker.sock 
+      # - /var/run/docker.sock:/var/run/docker.sock
 
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
     ports:
-      - "9090:9090"   # The Prometheus UI
+      - "9090:9090" # The Prometheus UI
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     extra_hosts:
@@ -31,7 +31,7 @@ services:
     image: grafana/grafana:latest
     container_name: grafana
     ports:
-      - "3000:3000"   # The Grafana Web UI
+      - "3000:3000" # The Grafana Web UI
     depends_on:
       - prometheus
     environment:
