@@ -54,7 +54,7 @@ class ModelDeployment:
     @app.post("/predict/")
     async def _predict(self, request: Request):
         data = await request.json()
-        sample_ds = ray.data.from_items([{"title": data.get("title", ""), "description": data.get("description", ""), "tag": ""}])
+        sample_ds = ray.data.from_items([{"title": data.get("title", ""), "description": data.get("description", ""), "tag": "other"}])
         results = predict.predict_proba(ds=sample_ds, predictor=self.predictor)
 
         # Apply custom logic
