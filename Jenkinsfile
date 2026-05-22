@@ -4,8 +4,7 @@ pipeline {
     environment {
         PYTHONUNBUFFERED = '1'
         PYTHONPATH = "${WORKSPACE}"
-        // Make sure your username is still set here!
-        GITHUB_USERNAME = 'Zorbiks' 
+        GITHUB_USERNAME = 'Yahyawi99' 
         RAY_SERVE_PROXY_READY_CHECK_TIMEOUT_S = '120'
     }
 
