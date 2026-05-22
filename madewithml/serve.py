@@ -15,34 +15,48 @@ from numpyencoder import NumpyEncoder
 from madewithml import evaluate, predict
 from madewithml.config import MLFLOW_TRACKING_URI, mlflow
 
-# ── Custom ML metrics (lazy-safe: defined here, NOT imported at top level) ────
-# Counter and Histogram are safe to define at module level because they only
-# register metadata into the REGISTRY — no thread locks are created yet.
-from prometheus_client import Counter, Histogram
+# ── Metric names only — no prometheus objects at module level ─────────────────
+# All prometheus objects are created inside _get_metrics() which is called at
+# request time, AFTER cloudpickle has already serialized the app/class.
+_metrics_cache = {}
 
-REQUEST_COUNT = Counter(
-    "http_requests_total",
-    "Total HTTP Requests",
-    ["method", "endpoint", "http_status"]
-)
+def _get_metrics():
+    """Return (or lazily create) prometheus metric objects.
+    Called only at request time — never at import/pickle time.
+    """
+    if _metrics_cache:
+        return _metrics_cache
 
-REQUEST_LATENCY = Histogram(
-    "http_request_duration_seconds",
-    "Request latency in seconds",
-    ["endpoint"],
-    buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
-)
+    from prometheus_client import Counter, Histogram, CollectorRegistry
+    registry = CollectorRegistry()  # isolated registry — no global thread locks
 
-PREDICTION_COUNT = Counter(
-    "model_predictions_total",
-    "Count of predictions per class (for drift detection)",
-    ["predicted_class"]
-)
+    _metrics_cache["REQUEST_COUNT"] = Counter(
+        "http_requests_total",
+        "Total HTTP Requests",
+        ["method", "endpoint", "http_status"],
+        registry=registry,
+    )
+    _metrics_cache["REQUEST_LATENCY"] = Histogram(
+        "http_request_duration_seconds",
+        "Request latency in seconds",
+        ["endpoint"],
+        buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+        registry=registry,
+    )
+    _metrics_cache["PREDICTION_COUNT"] = Counter(
+        "model_predictions_total",
+        "Count of predictions per class (drift detection)",
+        ["predicted_class"],
+        registry=registry,
+    )
+    _metrics_cache["THRESHOLD_FALLBACK_COUNT"] = Counter(
+        "model_threshold_fallbacks_total",
+        "Predictions that fell below threshold and were set to 'other'",
+        registry=registry,
+    )
+    _metrics_cache["registry"] = registry
+    return _metrics_cache
 
-THRESHOLD_FALLBACK_COUNT = Counter(
-    "model_threshold_fallbacks_total",
-    "How many times a prediction fell below threshold and was set to 'other'",
-)
 
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -53,9 +67,9 @@ app = FastAPI(
 
 @app.get("/metrics")
 def metrics():
-    # Lazy import here — keeps thread-locked REGISTRY out of cloudpickle's path
-    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest, REGISTRY
-    return Response(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+    m = _get_metrics()
+    return Response(generate_latest(m["registry"]), media_type=CONTENT_TYPE_LATEST)
 
 
 @serve.deployment(num_replicas=1, ray_actor_options={"num_cpus": 0, "num_gpus": 0})
@@ -71,7 +85,8 @@ class ModelDeployment:
     @app.get("/")
     def _index(self) -> Dict:
         """Health check."""
-        REQUEST_COUNT.labels(method="GET", endpoint="/", http_status=200).inc()
+        m = _get_metrics()
+        m["REQUEST_COUNT"].labels(method="GET", endpoint="/", http_status=200).inc()
         return {
             "message": HTTPStatus.OK.phrase,
             "status-code": HTTPStatus.OK,
@@ -80,23 +95,26 @@ class ModelDeployment:
 
     @app.get("/run_id/")
     def _run_id(self) -> Dict:
-        REQUEST_COUNT.labels(method="GET", endpoint="/run_id/", http_status=200).inc()
+        m = _get_metrics()
+        m["REQUEST_COUNT"].labels(method="GET", endpoint="/run_id/", http_status=200).inc()
         return {"run_id": self.run_id}
 
     @app.post("/evaluate/")
     async def _evaluate(self, request: Request) -> Dict:
         start = time.time()
+        m = _get_metrics()
         data = await request.json()
         results = evaluate.evaluate(run_id=self.run_id, dataset_loc=data.get("dataset"))
-        REQUEST_LATENCY.labels(endpoint="/evaluate/").observe(time.time() - start)
-        REQUEST_COUNT.labels(method="POST", endpoint="/evaluate/", http_status=200).inc()
+        m["REQUEST_LATENCY"].labels(endpoint="/evaluate/").observe(time.time() - start)
+        m["REQUEST_COUNT"].labels(method="POST", endpoint="/evaluate/", http_status=200).inc()
         return {"results": results}
 
     @app.post("/predict/")
     async def _predict(self, request: Request):
         start = time.time()
-        data = await request.json()
+        m = _get_metrics()
 
+        data = await request.json()
         sample_ds = ray.data.from_items([{
             "title": data.get("title", ""),
             "description": data.get("description", ""),
@@ -109,13 +127,12 @@ class ModelDeployment:
             prob = result["probabilities"]
             if prob[pred] < self.threshold:
                 results[i]["prediction"] = "other"
-                THRESHOLD_FALLBACK_COUNT.inc()
+                m["THRESHOLD_FALLBACK_COUNT"].inc()
 
-            # Track prediction distribution for drift detection
-            PREDICTION_COUNT.labels(predicted_class=results[i]["prediction"]).inc()
+            m["PREDICTION_COUNT"].labels(predicted_class=results[i]["prediction"]).inc()
 
-        REQUEST_LATENCY.labels(endpoint="/predict/").observe(time.time() - start)
-        REQUEST_COUNT.labels(method="POST", endpoint="/predict/", http_status=200).inc()
+        m["REQUEST_LATENCY"].labels(endpoint="/predict/").observe(time.time() - start)
+        m["REQUEST_COUNT"].labels(method="POST", endpoint="/predict/", http_status=200).inc()
 
         safe_results = json.loads(json.dumps(results, cls=NumpyEncoder))
         return {"results": safe_results}
