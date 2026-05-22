@@ -255,7 +255,7 @@ def train_model(
     d = {
         "timestamp": datetime.datetime.now().strftime("%B %d, %Y %I:%M:%S %p"),
         "run_id": utils.get_run_id(experiment_name=experiment_name, trial_id=trial_id),
-        "params": results.config["train_loop_config"],
+        "params": train_loop_config,
         "metrics": utils.dict_to_list(results.metrics_dataframe.to_dict(), keys=["epoch", "train_loss", "val_loss"]),
     }
     logger.info(json.dumps(d, indent=2))
