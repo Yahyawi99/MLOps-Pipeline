@@ -1,2 +1,3 @@
 site_name: Made With ML
-theme: material
+theme:
+  name: material
