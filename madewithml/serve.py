@@ -15,17 +15,14 @@ from numpyencoder import NumpyEncoder
 from madewithml import evaluate, predict
 from madewithml.config import MLFLOW_TRACKING_URI, mlflow
 
-# ── Single app with metrics mounted as a sub-application ─────────────────────
 app = FastAPI(
     title="Made With ML",
     description="Classify machine learning projects.",
     version="0.1",
 )
 
-# Separate mini-app for metrics — mounted AFTER class definition (see bottom)
-metrics_app = FastAPI()
-
-@metrics_app.get("/")
+# ── Metrics route on the SAME app, lazy import avoids pickle issues ───────────
+@app.get("/metrics")
 def metrics():
     from prometheus_client import CONTENT_TYPE_LATEST, generate_latest, REGISTRY
     return Response(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
@@ -78,11 +75,6 @@ class ModelDeployment:
 
         safe_results = json.loads(json.dumps(results, cls=NumpyEncoder))
         return {"results": safe_results}
-
-
-# Mount AFTER class definition so cloudpickle has already processed `app`
-# before the prometheus-backed metrics_app is attached to it.
-app.mount("/metrics", metrics_app)
 
 
 if __name__ == "__main__":
