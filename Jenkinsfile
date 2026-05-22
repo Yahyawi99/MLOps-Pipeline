@@ -20,7 +20,7 @@ pipeline {
                      branch 'main'       
                      changeRequest()      
                  }
-    }
+            }
             steps {
                 echo "Running training..."
                 sh '''
@@ -36,10 +36,10 @@ pipeline {
             }
         }
 
-// ==========================================
+        // ==========================================
         // 2. SERVE & DOCS WORKFLOW
         // ==========================================
-      stage('Deploy and Document') {
+        stage('Deploy and Document') {
             when {
                 branch 'main'
                 not { changeRequest() } 
@@ -55,16 +55,16 @@ pipeline {
                     # 2. Install uv tool securely on the host system python
                     python3 -m pip install uv --break-system-packages
 
-                    # 3. Force an isolated Python 3.10 runtime
+                    # 3. Create an isolated Python 3.10 runtime environment
                     uv venv .venv --python 3.10
                     
                     # 4. CRITICAL FIX: Pin setuptools < 81 because setuptools 81+ completely removed 'pkg_resources'
                     uv pip install "setuptools<81" -r requirements.txt
 
-                    # 5. Block Jenkins from sweeping background tracking elements
+                    # 5. Prevent Jenkins from killing background tracking processes
                     export JENKINS_NODE_COOKIE=dontKillMe
                     
-                    # 6. Extract latest experiment metadata using the isolated Python interpreter
+                    # 6. Extract the latest trained experiment run ID
                     LATEST_RUN_ID=$(.venv/bin/python3 -c "import mlflow; from madewithml.config import MLFLOW_TRACKING_URI; mlflow.set_tracking_uri(MLFLOW_TRACKING_URI); runs=mlflow.search_runs(experiment_names=['llm-classification']); print(runs.iloc[0].run_id if not runs.empty else '')")
                     
                     if [ -z "$LATEST_RUN_ID" ]; then
@@ -73,14 +73,14 @@ pipeline {
                     fi
                     echo "Found Run ID: $LATEST_RUN_ID"
                     
-                    # 7. Tear down lingering proxy infrastructure
+                    # 7. Clean up any lingering ray background processes
                     .venv/bin/ray stop || true
                     
-                    # 8. Execute serving architecture as a background process using the exact venv binary
+                    # 8. Start serving deployment in the background
                     nohup .venv/bin/python3 madewithml/serve.py --run_id $LATEST_RUN_ID > serve.log 2>&1 &
                     SERVE_PID=$!
                     
-                    # 9. Service Health Diagnostics Verification Loop
+                    # 9. Server Health Check Verification Loop
                     echo "Waiting for Ray Serve to initialize on port 8000..."
                     TIMEOUT=120
                     ELAPSED=0
@@ -109,10 +109,11 @@ pipeline {
                     echo "✅ Server is up and running successfully!"
                 '''
                 
-                // Compile documentation tracking using the isolated virtual environment binary
+                // Build documentation using the cached virtual environment binary
                 sh 'export UV_CACHE_DIR="/var/jenkins_home/.uv_cache" && .venv/bin/python3 -m mkdocs build'
             }
         }
+    }
     
     post {
         success {
