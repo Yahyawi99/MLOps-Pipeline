@@ -36,79 +36,82 @@ pipeline {
             }
         }
 
-        // ==========================================
+// ==========================================
         // 2. SERVE & DOCS WORKFLOW
         // ==========================================
-        stage('Deploy and Document') {
+      stage('Deploy and Document') {
             when {
                 branch 'main'
                 not { changeRequest() } 
             }
             steps {
-    echo "Securing Python 3.10 hermetic execution environment..."
+                echo "Securing Python 3.10 hermetic execution environment with persistent caching..."
 
-    sh '''#!/bin/bash
-        # 1. Install uv tool securely on the host system python
-        python3 -m pip install uv --break-system-packages
+                sh '''#!/bin/bash
+                    # 1. Define a persistent cache directory on the Jenkins host so downloads happen ONLY ONCE
+                    export UV_CACHE_DIR="/var/jenkins_home/.uv_cache"
+                    mkdir -p "$UV_CACHE_DIR"
 
-        # 2. Force an isolated Python 3.10 runtime
-        uv venv .venv --python 3.10
-        
-        # 3. Clean install the exact pinned project dependencies using explicit virtual environment paths
-        uv pip install -r requirements.txt
+                    # 2. Install uv tool securely on the host system python
+                    python3 -m pip install uv --break-system-packages
 
-        # 4. Block Jenkins from sweeping background tracking elements
-        export JENKINS_NODE_COOKIE=dontKillMe
-        
-        # 5. Extract latest experiment metadata using the isolated Python interpreter
-        LATEST_RUN_ID=$(.venv/bin/python3 -c "import mlflow; from madewithml.config import MLFLOW_TRACKING_URI; mlflow.set_tracking_uri(MLFLOW_TRACKING_URI); runs=mlflow.search_runs(experiment_names=['llm-classification']); print(runs.iloc[0].run_id if not runs.empty else '')")
-        
-        if [ -z "$LATEST_RUN_ID" ]; then
-            echo "Error: No MLflow runs found. You must train a model first!"
-            exit 1
-        fi
-        echo "Found Run ID: $LATEST_RUN_ID"
-        
-        # 6. Tear down lingering proxy infrastructure
-        .venv/bin/ray stop || true
-        
-        # 7. Execute serving architecture as a background process using the exact venv binary
-        nohup .venv/bin/python3 madewithml/serve.py --run_id $LATEST_RUN_ID > serve.log 2>&1 &
-        SERVE_PID=$!
-        
-        # 8. Service Health Diagnostics Verification Loop
-        echo "Waiting for Ray Serve to initialize on port 8000..."
-        TIMEOUT=120
-        ELAPSED=0
-        SLEEP_INTERVAL=2
+                    # 3. Force an isolated Python 3.10 runtime
+                    uv venv .venv --python 3.10
+                    
+                    # 4. Explicitly install setuptools to provide 'pkg_resources' needed by legacy MLflow
+                    uv pip install setuptools -r requirements.txt
 
-        while ! curl -s -f http://127.0.0.1:8000/ > /dev/null; do
-            if ! kill -0 $SERVE_PID 2>/dev/null; then
-                echo "❌ ERROR: serve.py crashed immediately on startup!"
-                echo "--- Printing serve.log for debugging ---"
-                cat serve.log
-                exit 1
-            fi
+                    # 5. Block Jenkins from sweeping background tracking elements
+                    export JENKINS_NODE_COOKIE=dontKillMe
+                    
+                    # 6. Extract latest experiment metadata using the isolated Python interpreter
+                    LATEST_RUN_ID=$(.venv/bin/python3 -c "import mlflow; from madewithml.config import MLFLOW_TRACKING_URI; mlflow.set_tracking_uri(MLFLOW_TRACKING_URI); runs=mlflow.search_runs(experiment_names=['llm-classification']); print(runs.iloc[0].run_id if not runs.empty else '')")
+                    
+                    if [ -z "$LATEST_RUN_ID" ]; then
+                        echo "Error: No MLflow runs found. You must train a model first!"
+                        exit 1
+                    fi
+                    echo "Found Run ID: $LATEST_RUN_ID"
+                    
+                    # 7. Tear down lingering proxy infrastructure
+                    .venv/bin/ray stop || true
+                    
+                    # 8. Execute serving architecture as a background process using the exact venv binary
+                    nohup .venv/bin/python3 madewithml/serve.py --run_id $LATEST_RUN_ID > serve.log 2>&1 &
+                    SERVE_PID=$!
+                    
+                    # 9. Service Health Diagnostics Verification Loop
+                    echo "Waiting for Ray Serve to initialize on port 8000..."
+                    TIMEOUT=120
+                    ELAPSED=0
+                    SLEEP_INTERVAL=2
 
-            if [ $ELAPSED -ge $TIMEOUT ]; then
-                echo "❌ ERROR: Server failed to start within $TIMEOUT seconds!"
-                echo "--- Printing serve.log for debugging ---"
-                cat serve.log
-                exit 1
-            fi
-            
-            echo "Server not ready yet. Retrying in $SLEEP_INTERVAL seconds... ($ELAPSED/$TIMEOUT)"
-            sleep $SLEEP_INTERVAL
-            ELAPSED=$((ELAPSED + SLEEP_INTERVAL))
-        done
-        
-        echo "✅ Server is up and running successfully!"
-    '''
-    
-    // Compile documentation tracking using the isolated virtual environment binary
-    sh '.venv/bin/python3 -m mkdocs build'
-}
+                    while ! curl -s -f http://127.0.0.1:8000/ > /dev/null; do
+                        if ! kill -0 $SERVE_PID 2>/dev/null; then
+                            echo "❌ ERROR: serve.py crashed immediately on startup!"
+                            echo "--- Printing serve.log for debugging ---"
+                            cat serve.log
+                            exit 1
+                        fi
 
+                        if [ $ELAPSED -ge $TIMEOUT ]; then
+                            echo "❌ ERROR: Server failed to start within $TIMEOUT seconds!"
+                            echo "--- Printing serve.log for debugging ---"
+                            cat serve.log
+                            exit 1
+                        fi
+                        
+                        echo "Server not ready yet. Retrying in $SLEEP_INTERVAL seconds... ($ELAPSED/$TIMEOUT)"
+                        sleep $SLEEP_INTERVAL
+                        ELAPSED=$((ELAPSED + SLEEP_INTERVAL))
+                    done
+                    
+                    echo "✅ Server is up and running successfully!"
+                '''
+                
+                // Compile documentation tracking using the isolated virtual environment binary
+                sh 'export UV_CACHE_DIR="/var/jenkins_home/.uv_cache" && .venv/bin/python3 -m mkdocs build'
+            }
         }
     }
     
