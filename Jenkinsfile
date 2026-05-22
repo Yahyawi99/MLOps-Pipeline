@@ -51,8 +51,10 @@ pipeline {
         // ==========================================
         stage('Deploy and Document') {
             when {
-                branch 'main'
-                not { changeRequest() } 
+                allOf {
+                    branch 'main'
+                    not { changeRequest() }
+                }
             }
             steps {
                 echo "Securing Python 3.10 hermetic execution environment with persistent caching..."
