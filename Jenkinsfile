@@ -13,9 +13,9 @@ pipeline {
         // 1. WORKLOADS WORKFLOW
         // =========================================
         stage('Model Development Workloads') {
-            when {
-                changeRequest()
-            }
+            // when {
+            //     changeRequest()
+            // }
             steps {
                 echo "Running training..."
                 sh '''
