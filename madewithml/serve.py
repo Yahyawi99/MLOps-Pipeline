@@ -5,7 +5,7 @@ from http import HTTPStatus
 from typing import Dict
 
 import ray
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from ray import serve
 from starlette.requests import Request
 
@@ -14,8 +14,8 @@ from numpyencoder import NumpyEncoder
 
 from madewithml import evaluate, predict
 from madewithml.config import MLFLOW_TRACKING_URI, mlflow
-
-from prometheus_fastapi_instrumentator import Instrumentator, metrics
+# Use the core prometheus_client instead of the instrumentator
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest, CollectorRegistry, multiproc, REGISTRY
 
 # Define application
 app = FastAPI(
@@ -24,8 +24,6 @@ app = FastAPI(
     version="0.1",
 )
 
-# CRITICAL FIX 1: Set num_cpus=0. 
-# This frees up the CPU so Ray Data can safely map batches without deadlocking.
 @serve.deployment(num_replicas=1, ray_actor_options={"num_cpus": 0, "num_gpus": 0})
 @serve.ingress(app)
 class ModelDeployment:
@@ -36,18 +34,6 @@ class ModelDeployment:
         mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
         best_checkpoint = predict.get_best_checkpoint(run_id=run_id)
         self.predictor = predict.TorchPredictor.from_checkpoint(best_checkpoint)
-        
-        # NEW STABLE INSTRUMENTATION
-        # We initialize the instrumentator but we DO NOT call .instrument(app) 
-        # which is what causes the 'options' AttributeError in Ray Proxy.
-        self.instrumentator = Instrumentator()
-        self.instrumentator.add(metrics.request_size())
-        self.instrumentator.add(metrics.response_size())
-        self.instrumentator.add(metrics.latency())
-        self.instrumentator.add(metrics.requests())
-        
-        # This exposes the /metrics endpoint safely
-        self.instrumentator.expose(app)
 
     @app.get("/")
     def _index(self) -> Dict:
@@ -57,6 +43,11 @@ class ModelDeployment:
             "status-code": HTTPStatus.OK,
             "data": {},
         }
+
+    # STABLE METRICS ENDPOINT: This avoids the Middleware 'options' error
+    @app.get("/metrics")
+    def metrics(self):
+        return Response(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
 
     @app.get("/run_id/")
     def _run_id(self) -> Dict:
@@ -73,8 +64,6 @@ class ModelDeployment:
     async def _predict(self, request: Request):
         data = await request.json()
         
-        # CRITICAL FIX 2: tag MUST be "other", not "". 
-        # This prevents PyTorch from attempting to cast NaN to int64, stopping the fatal crash!
         sample_ds = ray.data.from_items([
             {
                 "title": data.get("title", ""), 
@@ -85,17 +74,13 @@ class ModelDeployment:
         
         results = predict.predict_proba(ds=sample_ds, predictor=self.predictor)
 
-        # Apply custom logic
         for i, result in enumerate(results):
             pred = result["prediction"]
             prob = result["probabilities"]
             if prob[pred] < self.threshold:
                 results[i]["prediction"] = "other"
 
-        # --- CRITICAL FIX: Sanitize Numpy types to native Python types ---
         safe_results = json.loads(json.dumps(results, cls=NumpyEncoder))
-        # ----------------------------------------------------------------
-
         return {"results": safe_results}
 
 
@@ -113,6 +98,5 @@ if __name__ == "__main__":
         port=8000
     )
     
-    # CRITICAL FIX 3: Keep the Python process alive so the local Ray cluster doesn't shut down.
     while True:
         time.sleep(60)
