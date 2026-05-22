@@ -23,6 +23,11 @@ app = FastAPI(
     version="0.1",
 )
 
+# Separate the metrics endpoint from the class to prevent serialization issues
+@app.get("/metrics")
+def metrics():
+    return Response(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
+
 @serve.deployment(num_replicas=1, ray_actor_options={"num_cpus": 0, "num_gpus": 0})
 @serve.ingress(app)
 class ModelDeployment:
@@ -71,10 +76,7 @@ class ModelDeployment:
         safe_results = json.loads(json.dumps(results, cls=NumpyEncoder))
         return {"results": safe_results}
 
-# Separate the metrics endpoint from the class to prevent serialization issues
-@app.get("/metrics")
-def metrics():
-    return Response(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
