@@ -32,7 +32,7 @@ pipeline {
                     python3 -m pip install uv --break-system-packages
 
                     # 3. Establish the isolated runtime
-                    uv venv .venv --python 3.10
+                    uv venv .venv --python 3.10 --clear
                     
                     # 4. Install exact project dependencies with legacy setuptools compatibility
                     uv pip install "setuptools<81" -r requirements.txt
@@ -40,8 +40,8 @@ pipeline {
                     # 5. Clear out legacy tracking metrics written by mismatched global system versions
                     rm -rf mlruns/
 
-                    # 6. Execute training on a single line to prevent whitespace/backslash parsing issues in Typer
-                    .venv/bin/python3 madewithml/train.py --experiment-name "llm-classification" --dataset-loc "$(pwd)/datasets/dataset.csv" --train-loop-config '{"dropout_p": 0.5, "lr": 1e-4, "lr_factor": 0.8, "lr_patience": 3, "num_epochs": 1, "batch_size": 2}' --num-samples 20 --num-workers 1 --cpu-per-worker 1 --gpu-per-worker 0
+                    # 6. Execute the Typer command explicitly so option parsing matches the CLI definition
+                    .venv/bin/python3 madewithml/train.py train-model --experiment-name "llm-classification" --dataset-loc "$(pwd)/datasets/dataset.csv" --train-loop-config '{"dropout_p": 0.5, "lr": 1e-4, "lr_factor": 0.8, "lr_patience": 3, "num_epochs": 1, "batch_size": 2}' --num-samples 20 --num-workers 1 --cpu-per-worker 1 --gpu-per-worker 0
                 '''
             }
         }
@@ -66,7 +66,7 @@ pipeline {
                     python3 -m pip install uv --break-system-packages
 
                     # 3. Create an isolated Python 3.10 runtime environment
-                    uv venv .venv --python 3.10
+                    uv venv .venv --python 3.10 --clear
                     
                     # 4. Pin setuptools < 81 to preserve legacy pkg_resources compatibility
                     uv pip install "setuptools<81" -r requirements.txt
