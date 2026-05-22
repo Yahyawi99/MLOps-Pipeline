@@ -188,6 +188,11 @@ def train_model(
     train_loop_config["num_epochs"] = num_epochs
     train_loop_config["batch_size"] = batch_size
 
+    # Initialize Ray here (after Typer has parsed args) to avoid sys.argv conflicts
+    if ray.is_initialized():
+        ray.shutdown()
+    ray.init(runtime_env={"env_vars": {"GITHUB_USERNAME": os.environ.get("GITHUB_USERNAME", "")}})
+
     # Scaling config
     scaling_config = ScalingConfig(
         num_workers=num_workers,
@@ -279,7 +284,4 @@ def train_model(
 
 
 if __name__ == "__main__":  # pragma: no cover, application
-    if ray.is_initialized():
-        ray.shutdown()
-    ray.init(runtime_env={"env_vars": {"GITHUB_USERNAME": os.environ["GITHUB_USERNAME"]}})
     app()
