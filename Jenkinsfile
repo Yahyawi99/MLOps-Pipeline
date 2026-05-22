@@ -21,37 +21,11 @@ pipeline {
                      changeRequest()       
                  }
     }
-            steps {
-                echo "Running training..."
-                sh '''
-                    python3 madewithml/train.py \
-                        --experiment-name="llm-classification" \
-                        --dataset-loc="$(pwd)/datasets/dataset.csv" \
-                        --train-loop-config='{"dropout_p": 0.5, "lr": 1e-4, "lr_factor": 0.8, "lr_patience": 3, "num_epochs": 1, "batch_size": 2}' \
-                        --num-samples=20 \
-                        --num-workers=1 \
-                        --cpu-per-worker=1 \
-                        --gpu-per-worker=0
-                '''
-            }
-        }
-
-        // ==========================================
-        // 2. SERVE & DOCS WORKFLOW
-        // ==========================================
-        stage('Deploy and Document') {
-               when {
-        allOf {
-            branch 'main'
-            not { changeRequest() }  // push to main only, not PRs
-        }
-    }
-
-    steps {
+steps {
     echo "Push to main detected. Deploying application and updating docs..."
 
-    // 🟩 Added "ray[serve]" with quotes to pull down grpc and web serving dependencies
-    sh 'python3 -m pip install --break-system-packages "click<8.1.0" "typer==0.9.0" "ray[serve]"'
+    // 🟩 Added numpyencoder to the install list
+    sh 'python3 -m pip install --break-system-packages "click<8.1.0" "typer==0.9.0" "ray[serve]" numpyencoder'
     
     sh '''
         # 1. Tell Jenkins NOT to kill our background processes
