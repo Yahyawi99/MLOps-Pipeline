@@ -146,11 +146,11 @@ if __name__ == "__main__":
 
     ray.init(runtime_env={"env_vars": {"GITHUB_USERNAME": os.environ.get("GITHUB_USERNAME", "")}})
 
-    serve.run(
-        ModelDeployment.bind(run_id=args.run_id, threshold=args.threshold),
-        host="0.0.0.0",
-        port=8000,
-    )
+    # Configure proxy network parameters before startup
+    serve.start(http_options={"host": "0.0.0.0", "port": 8000})
+
+    # Execute the deployment binding cleanly
+    serve.run(ModelDeployment.bind(run_id=args.run_id, threshold=args.threshold))
 
     while True:
         time.sleep(60)
