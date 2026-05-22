@@ -248,9 +248,13 @@ def train_model(
 
     # Train
     results = trainer.fit()
+
+    # Ray Train v2 removed trial_id from results.metrics.
+    # Fall back to extracting run_id directly from the experiment name.
+    trial_id = results.metrics.get("trial_id") or results.metrics.get("experiment_tag")
     d = {
         "timestamp": datetime.datetime.now().strftime("%B %d, %Y %I:%M:%S %p"),
-        "run_id": utils.get_run_id(experiment_name=experiment_name, trial_id=results.metrics["trial_id"]),
+        "run_id": utils.get_run_id(experiment_name=experiment_name, trial_id=trial_id),
         "params": results.config["train_loop_config"],
         "metrics": utils.dict_to_list(results.metrics_dataframe.to_dict(), keys=["epoch", "train_loss", "val_loss"]),
     }

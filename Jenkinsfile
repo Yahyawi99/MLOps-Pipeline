@@ -6,6 +6,8 @@ pipeline {
         PYTHONPATH = "${WORKSPACE}"
         GITHUB_USERNAME = 'Yahyawi99' 
         RAY_SERVE_PROXY_READY_CHECK_TIMEOUT_S = '120'
+        RAY_DEDUP_LOGS = "0"
+        RAY_TRAIN_ENABLE_V2_MIGRATION_WARNINGS = "0"
     }
 
     stages {

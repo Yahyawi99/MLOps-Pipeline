@@ -5,12 +5,9 @@ from typing import Any, Dict, List
 
 import numpy as np
 import torch
-from ray.data import DatasetContext
 from ray.train.torch import get_device
 
 from madewithml.config import mlflow
-
-DatasetContext.get_current().execution_options.preserve_order = True
 
 
 def set_seeds(seed: int = 42):
@@ -56,8 +53,8 @@ def save_dict(d: Dict, path: str, cls: Any = None, sortkeys: bool = False) -> No
 
 
 def pad_array(arr: np.ndarray, dtype=np.int32) -> np.ndarray:
-    """Pad an 2D array with zeros until all rows in the
-    2D array are of the same length as a the longest
+    """Pad a 2D array with zeros until all rows in the
+    2D array are of the same length as the longest
     row in the 2D array.
 
     Args:
@@ -91,19 +88,29 @@ def collate_fn(batch: Dict[str, np.ndarray]) -> Dict[str, torch.Tensor]:  # prag
     return tensor_batch
 
 
-def get_run_id(experiment_name: str, trial_id: str) -> str:  # pragma: no cover, mlflow functionality
-    """Get the MLflow run ID for a specific Ray trial ID.
+def get_run_id(experiment_name: str, trial_id: str = None) -> str:  # pragma: no cover, mlflow functionality
+    """Get the MLflow run ID for the most recent run of an experiment.
+
+    Ray Train v2 no longer sets the 'trial_name' tag used by the old implementation,
+    so we fall back to returning the most recent run for the experiment.
 
     Args:
         experiment_name (str): name of the experiment.
-        trial_id (str): id of the trial.
+        trial_id (str, optional): unused, kept for backwards compatibility.
 
     Returns:
-        str: run id of the trial.
+        str: run id of the most recent run, or empty string if not found.
     """
-    trial_name = f"TorchTrainer_{trial_id}"
-    run = mlflow.search_runs(experiment_names=[experiment_name], filter_string=f"tags.trial_name = '{trial_name}'").iloc[0]
-    return run.run_id
+    try:
+        runs = mlflow.search_runs(
+            experiment_names=[experiment_name],
+            order_by=["start_time DESC"],
+        )
+        if not runs.empty:
+            return runs.iloc[0].run_id
+    except Exception:
+        pass
+    return ""
 
 
 def dict_to_list(data: Dict, keys: List[str]) -> List[Dict[str, Any]]:
