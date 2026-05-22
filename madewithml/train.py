@@ -4,6 +4,7 @@ import os
 import tempfile
 from typing import Tuple
 
+import mlflow
 import numpy as np
 import ray
 import ray.train as train
@@ -11,7 +12,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import typer
-from ray.air.integrations.mlflow import MLflowLoggerCallback
 from ray.data import Dataset
 from ray.train import (
     Checkpoint,
@@ -160,7 +160,7 @@ def train_model(
     num_epochs: Annotated[int, typer.Option(help="number of epochs to train for.")] = 1,
     batch_size: Annotated[int, typer.Option(help="number of samples per batch.")] = 256,
     results_fp: Annotated[str, typer.Option(help="filepath to save results to.")] = None,
-) -> ray.air.result.Result:
+) -> train.Result:
     """Main train function to train our model as a distributed workload.
 
     Args:
@@ -179,7 +179,7 @@ def train_model(
         results_fp (str, optional): filepath to save results to. Defaults to None.
 
     Returns:
-        ray.air.result.Result: training results.
+        ray.train.Result: training results.
     """
     # Set up
     train_loop_config = json.loads(train_loop_config)
@@ -201,19 +201,17 @@ def train_model(
         checkpoint_score_order="min",
     )
 
-    # MLflow callback
-    mlflow_callback = MLflowLoggerCallback(
-        tracking_uri=MLFLOW_TRACKING_URI,
-        experiment_name=experiment_name,
-        save_artifact=True,
-    )
-
     # Run config
-    run_config = RunConfig(callbacks=[mlflow_callback], checkpoint_config=checkpoint_config, storage_path=EFS_DIR, local_dir=EFS_DIR)
+    run_config = RunConfig(checkpoint_config=checkpoint_config, storage_path=EFS_DIR)
 
     # Dataset
     ds = data.load_data(dataset_loc=dataset_loc, num_samples=train_loop_config["num_samples"])
     train_ds, val_ds = data.stratify_split(ds, stratify="tag", test_size=0.2)
+
+    # Materialize before unique() to prevent Ray's lazy planner from dropping the 'tag' column
+    train_ds = train_ds.materialize()
+    val_ds = val_ds.materialize()
+
     tags = train_ds.unique(column="tag")
     train_loop_config["num_classes"] = len(tags)
 
@@ -249,6 +247,20 @@ def train_model(
         "metrics": utils.dict_to_list(results.metrics_dataframe.to_dict(), keys=["epoch", "train_loss", "val_loss"]),
     }
     logger.info(json.dumps(d, indent=2))
+
+    # MLflow tracking
+    if MLFLOW_TRACKING_URI:
+        try:
+            mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+            mlflow.set_experiment(experiment_name)
+            with mlflow.start_run():
+                mlflow.log_params(d["params"])
+                if "train_loss" in results.metrics:
+                    mlflow.log_metric("train_loss", results.metrics["train_loss"])
+                if "val_loss" in results.metrics:
+                    mlflow.log_metric("val_loss", results.metrics["val_loss"])
+        except Exception as e:
+            logger.warning(f"MLflow tracking skipped: {e}")
     if results_fp:  # pragma: no cover, saving results
         utils.save_dict(d, results_fp)
     return results
