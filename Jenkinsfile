@@ -58,8 +58,8 @@ pipeline {
                     # 3. Force an isolated Python 3.10 runtime
                     uv venv .venv --python 3.10
                     
-                    # 4. Explicitly install setuptools to provide 'pkg_resources' needed by legacy MLflow
-                    uv pip install setuptools -r requirements.txt
+                    # 4. CRITICAL FIX: Pin setuptools < 81 because setuptools 81+ completely removed 'pkg_resources'
+                    uv pip install "setuptools<81" -r requirements.txt
 
                     # 5. Block Jenkins from sweeping background tracking elements
                     export JENKINS_NODE_COOKIE=dontKillMe
@@ -113,7 +113,6 @@ pipeline {
                 sh 'export UV_CACHE_DIR="/var/jenkins_home/.uv_cache" && .venv/bin/python3 -m mkdocs build'
             }
         }
-    }
     
     post {
         success {
