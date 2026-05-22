@@ -22,35 +22,23 @@ pipeline {
                  }
     }
 steps {
-    echo "Push to main detected. Installing explicit dependencies and deploying application..."
+    echo "Securing Python 3.10 hermetic execution environment..."
 
     sh '''
-        # 1. Clean install of all required application, serving, and documentation dependencies
-        python3 -m pip install --break-system-packages \
-            "click<8.1.0" \
-            "typer==0.9.0" \
-            "ray[serve]" \
-            mlflow \
-            numpy \
-            numpyencoder \
-            pandas \
-            torch \
-            transformers \
-            snorkel \
-            scikit-learn \
-            hyperopt \
-            nltk \
-            python-dotenv \
-            SQLAlchemy \
-            fastapi \
-            mkdocs \
-            mkdocstrings \
-            "mkdocstrings[python]"
+        # 1. Install uv tool securely on the host system python
+        python3 -m pip install uv --break-system-packages
 
-        # 2. Tell Jenkins NOT to kill our background processes
+        # 2. Force an isolated Python 3.10 runtime (uv fetches this automatically in user space)
+        uv venv .venv --python 3.10
+        source .venv/bin/activate
+
+        # 3. Clean install the exact pinned project dependencies
+        uv pip install -r requirements.txt
+
+        # 4. Block Jenkins from sweeping background tracking elements
         export JENKINS_NODE_COOKIE=dontKillMe
         
-        # 3. Get the latest Model Run ID
+        # 5. Extract latest experiment metadata within the runtime partition
         LATEST_RUN_ID=$(python3 -c "import mlflow; from madewithml.config import MLFLOW_TRACKING_URI; mlflow.set_tracking_uri(MLFLOW_TRACKING_URI); runs=mlflow.search_runs(experiment_names=['llm-classification']); print(runs.iloc[0].run_id if not runs.empty else '')")
         
         if [ -z "$LATEST_RUN_ID" ]; then
@@ -59,21 +47,20 @@ steps {
         fi
         echo "Found Run ID: $LATEST_RUN_ID"
         
-        # 4. Stop any existing deployed models
+        # 6. Tear down lingering proxy infrastructure
         ray stop || true
         
-        # 5. Deploy the new model in the background and capture its Process ID (PID)
+        # 7. Execute serving architecture as a background process
         nohup python3 madewithml/serve.py --run_id $LATEST_RUN_ID > serve.log 2>&1 &
         SERVE_PID=$!
         
-        # 6. DIAGNOSTIC POLLING: Wait for server or catch early crash
+        # 8. Service Health Diagnostics Verification Loop
         echo "Waiting for Ray Serve to initialize on port 8000..."
         TIMEOUT=120
         ELAPSED=0
         SLEEP_INTERVAL=2
 
         while ! curl -s -f http://127.0.0.1:8000/ > /dev/null; do
-            # CRITICAL CHECK: Did the background process die?
             if ! kill -0 $SERVE_PID 2>/dev/null; then
                 echo "❌ ERROR: serve.py crashed immediately on startup!"
                 echo "--- Printing serve.log for debugging ---"
@@ -96,8 +83,8 @@ steps {
         echo "✅ Server is up and running successfully!"
     '''
     
-    // Build the documentation
-    sh 'python3 -m mkdocs build'
+    // Compile documentation tracking with virtual environment wrapper
+    sh '.venv/bin/python3 -m mkdocs build'
 }
 
         }

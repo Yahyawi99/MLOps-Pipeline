@@ -15,20 +15,14 @@ from numpyencoder import NumpyEncoder
 from madewithml import evaluate, predict
 from madewithml.config import MLFLOW_TRACKING_URI, mlflow
 
-# ── Metric names only — no prometheus objects at module level ─────────────────
-# All prometheus objects are created inside _get_metrics() which is called at
-# request time, AFTER cloudpickle has already serialized the app/class.
 _metrics_cache = {}
 
 def _get_metrics():
-    """Return (or lazily create) prometheus metric objects.
-    Called only at request time — never at import/pickle time.
-    """
     if _metrics_cache:
         return _metrics_cache
 
     from prometheus_client import Counter, Histogram, CollectorRegistry
-    registry = CollectorRegistry()  # isolated registry — no global thread locks
+    registry = CollectorRegistry()
 
     _metrics_cache["REQUEST_COUNT"] = Counter(
         "http_requests_total",
@@ -58,7 +52,6 @@ def _get_metrics():
     return _metrics_cache
 
 
-# ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="Made With ML",
     description="Classify machine learning projects.",
@@ -80,32 +73,12 @@ class ModelDeployment:
         self.threshold = threshold
         mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
         
-        # 🟩 BYPASS VERSION SKEW: Directly resolve the checkpoint directory location
-        from urllib.parse import urlparse
-        import pathlib
-        from ray.train import Checkpoint
-        
-        artifact_uri = mlflow.get_run(run_id).info.artifact_uri
-        artifact_dir = urlparse(artifact_uri).path
-        
-        # Scan for existing checkpoint directories within MLflow run artifacts
-        checkpoint_dirs = sorted([str(p) for p in pathlib.Path(artifact_dir).rglob("checkpoint_*")])
-        if not checkpoint_dirs:
-            checkpoint_dirs = sorted([str(p) for p in pathlib.Path(artifact_dir).glob("checkpoint_*")])
-            
-        if not checkpoint_dirs:
-            raise RuntimeError(f"No valid directory starting with 'checkpoint_' found in {artifact_dir}")
-            
-        # Target the latest tracked checkpoint directory
-        best_checkpoint_dir = checkpoint_dirs[-1]
-        print(f" Bypassed legacy loader. Instantiating checkpoint directly from: {best_checkpoint_dir}")
-        
-        best_checkpoint = Checkpoint.from_directory(best_checkpoint_dir)
+        # Original clean checkpoint resolution
+        best_checkpoint = predict.get_best_checkpoint(run_id=run_id)
         self.predictor = predict.TorchPredictor.from_checkpoint(best_checkpoint)
 
     @app.get("/")
     def _index(self) -> Dict:
-        """Health check."""
         m = _get_metrics()
         m["REQUEST_COUNT"].labels(method="GET", endpoint="/", http_status=200).inc()
         return {
@@ -167,11 +140,11 @@ if __name__ == "__main__":
 
     ray.init(runtime_env={"env_vars": {"GITHUB_USERNAME": os.environ.get("GITHUB_USERNAME", "")}})
 
-    # Configure proxy network parameters before startup
-    serve.start(http_options={"host": "0.0.0.0", "port": 8000})
-
-    # Execute the deployment binding cleanly
-    serve.run(ModelDeployment.bind(run_id=args.run_id, threshold=args.threshold))
+    serve.run(
+        ModelDeployment.bind(run_id=args.run_id, threshold=args.threshold),
+        host="0.0.0.0",
+        port=8000,
+    )
 
     while True:
         time.sleep(60)
