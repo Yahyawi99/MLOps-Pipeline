@@ -24,22 +24,21 @@ pipeline {
 steps {
     echo "Securing Python 3.10 hermetic execution environment..."
 
-    sh '''
+    sh '''#!/bin/bash
         # 1. Install uv tool securely on the host system python
         python3 -m pip install uv --break-system-packages
 
-        # 2. Force an isolated Python 3.10 runtime (uv fetches this automatically in user space)
+        # 2. Force an isolated Python 3.10 runtime
         uv venv .venv --python 3.10
-        source .venv/bin/activate
-
-        # 3. Clean install the exact pinned project dependencies
+        
+        # 3. Clean install the exact pinned project dependencies using explicit virtual environment paths
         uv pip install -r requirements.txt
 
         # 4. Block Jenkins from sweeping background tracking elements
         export JENKINS_NODE_COOKIE=dontKillMe
         
-        # 5. Extract latest experiment metadata within the runtime partition
-        LATEST_RUN_ID=$(python3 -c "import mlflow; from madewithml.config import MLFLOW_TRACKING_URI; mlflow.set_tracking_uri(MLFLOW_TRACKING_URI); runs=mlflow.search_runs(experiment_names=['llm-classification']); print(runs.iloc[0].run_id if not runs.empty else '')")
+        # 5. Extract latest experiment metadata using the isolated Python interpreter
+        LATEST_RUN_ID=$(.venv/bin/python3 -c "import mlflow; from madewithml.config import MLFLOW_TRACKING_URI; mlflow.set_tracking_uri(MLFLOW_TRACKING_URI); runs=mlflow.search_runs(experiment_names=['llm-classification']); print(runs.iloc[0].run_id if not runs.empty else '')")
         
         if [ -z "$LATEST_RUN_ID" ]; then
             echo "Error: No MLflow runs found. You must train a model first!"
@@ -48,10 +47,10 @@ steps {
         echo "Found Run ID: $LATEST_RUN_ID"
         
         # 6. Tear down lingering proxy infrastructure
-        ray stop || true
+        .venv/bin/ray stop || true
         
-        # 7. Execute serving architecture as a background process
-        nohup python3 madewithml/serve.py --run_id $LATEST_RUN_ID > serve.log 2>&1 &
+        # 7. Execute serving architecture as a background process using the exact venv binary
+        nohup .venv/bin/python3 madewithml/serve.py --run_id $LATEST_RUN_ID > serve.log 2>&1 &
         SERVE_PID=$!
         
         # 8. Service Health Diagnostics Verification Loop
@@ -83,7 +82,7 @@ steps {
         echo "✅ Server is up and running successfully!"
     '''
     
-    // Compile documentation tracking with virtual environment wrapper
+    // Compile documentation tracking using the isolated virtual environment binary
     sh '.venv/bin/python3 -m mkdocs build'
 }
 
