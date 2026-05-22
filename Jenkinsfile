@@ -37,7 +37,7 @@ pipeline {
         }
 
         // ==========================================
-        // 2. SERVE & DOCS WORKFLOW
+        // 2. SERVE and DOCS WORKFLOW
         // ==========================================
         stage('Deploy and Document') {
             when {
