@@ -22,37 +22,35 @@ pipeline {
                  }
     }
 steps {
-    echo "Push to main detected. Translating requirements and deploying application..."
+    echo "Push to main detected. Installing explicit dependencies and deploying application..."
 
     sh '''
-        # 1. DYNAMIC TRANSLATION: Strip legacy pins so pip can find Python 3.13 wheels
-        python3 -c "
-with open('requirements.txt', 'r') as f:
-    lines = f.readlines()
-with open('requirements_313.txt', 'w') as f:
-    for line in lines:
-        # Strip exact version pins (==)
-        clean_line = line.split('==')[0].strip()
-        # Modern Ray has dropped the legacy 'air' bundle; replace it with base ray
-        if 'ray[air]' in clean_line:
-            clean_line = 'ray'
-        f.write(clean_line + '\n')
-"
+        # 1. Clean install of all required application, serving, and documentation dependencies
+        python3 -m pip install --break-system-packages \
+            "click<8.1.0" \
+            "typer==0.9.0" \
+            "ray[serve]" \
+            mlflow \
+            numpy \
+            numpyencoder \
+            pandas \
+            torch \
+            transformers \
+            snorkel \
+            scikit-learn \
+            hyperopt \
+            nltk \
+            python-dotenv \
+            SQLAlchemy \
+            fastapi \
+            mkdocs \
+            mkdocstrings \
+            "mkdocstrings[python]"
 
-        echo "--- Generated Python 3.13 Compatible Requirements ---"
-        cat requirements_313.txt
-        echo "-----------------------------------------------------"
-
-        # 2. Install the modern unpinned dependency stack
-        python3 -m pip install --break-system-packages -r requirements_313.txt
-
-        # 3. Explicitly force down your required CLI overrides and web extensions
-        python3 -m pip install --break-system-packages "click<8.1.0" "typer==0.9.0" "ray[serve]"
-
-        # 4. Tell Jenkins NOT to kill our background processes
+        # 2. Tell Jenkins NOT to kill our background processes
         export JENKINS_NODE_COOKIE=dontKillMe
         
-        # 5. Get the latest Model Run ID
+        # 3. Get the latest Model Run ID
         LATEST_RUN_ID=$(python3 -c "import mlflow; from madewithml.config import MLFLOW_TRACKING_URI; mlflow.set_tracking_uri(MLFLOW_TRACKING_URI); runs=mlflow.search_runs(experiment_names=['llm-classification']); print(runs.iloc[0].run_id if not runs.empty else '')")
         
         if [ -z "$LATEST_RUN_ID" ]; then
@@ -61,14 +59,14 @@ with open('requirements_313.txt', 'w') as f:
         fi
         echo "Found Run ID: $LATEST_RUN_ID"
         
-        # 6. Stop any existing deployed models
+        # 4. Stop any existing deployed models
         ray stop || true
         
-        # 7. Deploy the new model in the background and capture its Process ID (PID)
+        # 5. Deploy the new model in the background and capture its Process ID (PID)
         nohup python3 madewithml/serve.py --run_id $LATEST_RUN_ID > serve.log 2>&1 &
         SERVE_PID=$!
         
-        # 8. DIAGNOSTIC POLLING: Wait for server or catch early crash
+        # 6. DIAGNOSTIC POLLING: Wait for server or catch early crash
         echo "Waiting for Ray Serve to initialize on port 8000..."
         TIMEOUT=120
         ELAPSED=0
