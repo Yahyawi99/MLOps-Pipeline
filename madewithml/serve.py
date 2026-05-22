@@ -79,7 +79,28 @@ class ModelDeployment:
         self.run_id = run_id
         self.threshold = threshold
         mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-        best_checkpoint = predict.get_best_checkpoint(run_id=run_id)
+        
+        # 🟩 BYPASS VERSION SKEW: Directly resolve the checkpoint directory location
+        from urllib.parse import urlparse
+        import pathlib
+        from ray.train import Checkpoint
+        
+        artifact_uri = mlflow.get_run(run_id).info.artifact_uri
+        artifact_dir = urlparse(artifact_uri).path
+        
+        # Scan for existing checkpoint directories within MLflow run artifacts
+        checkpoint_dirs = sorted([str(p) for p in pathlib.Path(artifact_dir).rglob("checkpoint_*")])
+        if not checkpoint_dirs:
+            checkpoint_dirs = sorted([str(p) for p in pathlib.Path(artifact_dir).glob("checkpoint_*")])
+            
+        if not checkpoint_dirs:
+            raise RuntimeError(f"No valid directory starting with 'checkpoint_' found in {artifact_dir}")
+            
+        # Target the latest tracked checkpoint directory
+        best_checkpoint_dir = checkpoint_dirs[-1]
+        print(f" Bypassed legacy loader. Instantiating checkpoint directly from: {best_checkpoint_dir}")
+        
+        best_checkpoint = Checkpoint.from_directory(best_checkpoint_dir)
         self.predictor = predict.TorchPredictor.from_checkpoint(best_checkpoint)
 
     @app.get("/")
