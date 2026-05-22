@@ -46,56 +46,57 @@ pipeline {
             not { changeRequest() }  // push to main only, not PRs
         }
     }
-            steps {
-                echo "Push to main detected. Deploying application and updating docs..."
+           steps {
+    echo "Push to main detected. Deploying application and updating docs..."
 
-                sh 'python3 -m pip install "click<8.1.0" "typer==0.9.0"'
-                
-                sh '''
-                    # 1. MAGICAL FIX: Tell Jenkins NOT to kill our background processes!
-                    export JENKINS_NODE_COOKIE=dontKillMe
-                    
-                    # 2. Get the latest Model Run ID
-                    LATEST_RUN_ID=$(python3 -c "import mlflow; from madewithml.config import MLFLOW_TRACKING_URI; mlflow.set_tracking_uri(MLFLOW_TRACKING_URI); runs=mlflow.search_runs(experiment_names=['llm-classification']); print(runs.iloc[0].run_id if not runs.empty else '')")
-                    
-                    if [ -z "$LATEST_RUN_ID" ]; then
-                        echo "Error: No MLflow runs found. You must train a model first!"
-                        exit 1
-                    fi
-                    echo "Found Run ID: $LATEST_RUN_ID"
-                    
-                    # 3. Stop any existing deployed models
-                    ray stop || true
-                    
-                    # 4. Deploy the new model in the background
-                    nohup python3 madewithml/serve.py --run_id $LATEST_RUN_ID > serve.log 2>&1 &
-                    
-                    # 5. ACTIVE POLLING: Wait for the server to become healthy
-                    echo "Waiting for Ray Serve to initialize..."
-                    TIMEOUT=120
-                    ELAPSED=0
-                    SLEEP_INTERVAL=2
+    # 🟩 Added --break-system-packages to bypass PEP 668 restriction inside the container
+    sh 'python3 -m pip install --break-system-packages "click<8.1.0" "typer==0.9.0"'
+    
+    sh '''
+        # 1. MAGICAL FIX: Tell Jenkins NOT to kill our background processes!
+        export JENKINS_NODE_COOKIE=dontKillMe
+        
+        # 2. Get the latest Model Run ID
+        LATEST_RUN_ID=$(python3 -c "import mlflow; from madewithml.config import MLFLOW_TRACKING_URI; mlflow.set_tracking_uri(MLFLOW_TRACKING_URI); runs=mlflow.search_runs(experiment_names=['llm-classification']); print(runs.iloc[0].run_id if not runs.empty else '')")
+        
+        if [ -z "$LATEST_RUN_ID" ]; then
+            echo "Error: No MLflow runs found. You must train a model first!"
+            exit 1
+        fi
+        echo "Found Run ID: $LATEST_RUN_ID"
+        
+        # 3. Stop any existing deployed models
+        ray stop || true
+        
+        # 4. Deploy the new model in the background
+        nohup python3 madewithml/serve.py --run_id $LATEST_RUN_ID > serve.log 2>&1 &
+        
+        # 5. ACTIVE POLLING: Wait for the server to become healthy
+        echo "Waiting for Ray Serve to initialize..."
+        TIMEOUT=120
+        ELAPSED=0
+        SLEEP_INTERVAL=2
 
-                    # The curl command checks the health endpoint (/) 
-                    # -s silences curl output, -f makes curl fail on HTTP errors (like 500 or 404)
-                    while ! curl -s -f http://127.0.0.1:8000/ > /dev/null; do
-                        if [ $ELAPSED -ge $TIMEOUT ]; then
-                            echo "❌ ERROR: Server failed to start within $TIMEOUT seconds!"
-                            echo "--- Printing serve.log for debugging ---"
-                            cat serve.log
-                            exit 1
-                        fi
-                        echo "Server not ready yet. Retrying in $SLEEP_INTERVAL seconds... ($ELAPSED/$TIMEOUT)"
-                        sleep $SLEEP_INTERVAL
-                        ELAPSED=$((ELAPSED + SLEEP_INTERVAL))
-                    done
-                    
-                    echo "✅ Server is up and running successfully!"
-                '''
-                
-                // Build the documentation
-                sh 'python3 -m mkdocs build'
-            }
+        # The curl command checks the health endpoint (/) 
+        # -s silences curl output, -f makes curl fail on HTTP errors (like 500 or 404)
+        while ! curl -s -f http://127.0.0.1:8000/ > /dev/null; do
+            if [ $ELAPSED -ge $TIMEOUT ]; then
+                echo "❌ ERROR: Server failed to start within $TIMEOUT seconds!"
+                echo "--- Printing serve.log for debugging ---"
+                cat serve.log
+                exit 1
+            fi
+            echo "Server not ready yet. Retrying in $SLEEP_INTERVAL seconds... ($ELAPSED/$TIMEOUT)"
+            sleep $SLEEP_INTERVAL
+            ELAPSED=$((ELAPSED + SLEEP_INTERVAL))
+        done
+        
+        echo "✅ Server is up and running successfully!"
+    '''
+    
+    // Build the documentation
+    sh 'python3 -m mkdocs build'
+}
         }
     }
     
