@@ -40,15 +40,8 @@ pipeline {
                     # 5. Clear out legacy tracking metrics written by mismatched global system versions
                     rm -rf mlruns/
 
-                    # 6. Execute training using spaces instead of equals signs to satisfy Typer
-                    .venv/bin/python3 madewithml/train.py \
-                        --experiment-name "llm-classification" \
-                        --dataset-loc "$(pwd)/datasets/dataset.csv" \
-                        --train-loop-config '{"dropout_p": 0.5, "lr": 1e-4, "lr_factor": 0.8, "lr_patience": 3, "num_epochs": 1, "batch_size": 2}' \
-                        --num-samples 20 \
-                        --num-workers 1 \
-                        --cpu-per-worker 1 \
-                        --gpu-per-worker 0
+                    # 6. Execute training on a single line to prevent whitespace/backslash parsing issues in Typer
+                    .venv/bin/python3 madewithml/train.py --experiment-name "llm-classification" --dataset-loc "$(pwd)/datasets/dataset.csv" --train-loop-config '{"dropout_p": 0.5, "lr": 1e-4, "lr_factor": 0.8, "lr_patience": 3, "num_epochs": 1, "batch_size": 2}' --num-samples 20 --num-workers 1 --cpu-per-worker 1 --gpu-per-worker 0
                 '''
             }
         }
@@ -126,7 +119,7 @@ pipeline {
                     echo "✅ Server is up and running successfully!"
                 '''
                 
-                // Build documentation using the cached virtual environment binary (Groovy comment style)
+                // Build documentation using the cached virtual environment binary
                 sh 'export UV_CACHE_DIR="/var/jenkins_home/.uv_cache" && .venv/bin/python3 -m mkdocs build'
             }
         }
