@@ -15,9 +15,12 @@ pipeline {
         // 1. WORKLOADS WORKFLOW
         // =========================================
         stage('Model Development Workloads') {
-            // when {
-            //     changeRequest()
-            // }
+            when {
+                anyOf {
+                     branch 'main'       
+                     changeRequest()       
+                 }
+    }
             steps {
                 echo "Running training..."
                 sh '''
@@ -37,10 +40,12 @@ pipeline {
         // 2. SERVE & DOCS WORKFLOW
         // ==========================================
         stage('Deploy and Document') {
-            when {
-                branch 'main'
-                not { changeRequest() } 
-            }
+               when {
+        allOf {
+            branch 'main'
+            not { changeRequest() }  // push to main only, not PRs
+        }
+    }
             steps {
                 echo "Push to main detected. Deploying application and updating docs..."
 
