@@ -80,7 +80,7 @@ pipeline {
 
         # The curl command checks the health endpoint (/) 
         # -s silences curl output, -f makes curl fail on HTTP errors (like 500 or 404)
-        while ! curl -s -f http://127.0.0.1:8000/ > /dev/null; do
+        while ! curl -s -f http://127.0.0.1:8080/ > /dev/null; do
             if [ $ELAPSED -ge $TIMEOUT ]; then
                 echo "❌ ERROR: Server failed to start within $TIMEOUT seconds!"
                 echo "--- Printing serve.log for debugging ---"
