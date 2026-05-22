@@ -50,11 +50,11 @@ pipeline {
     steps {
     echo "Push to main detected. Deploying application and updating docs..."
 
-    // 🟩 Fixed comment syntax to use Groovy style (// instead of #)
-    sh 'python3 -m pip install --break-system-packages "click<8.1.0" "typer==0.9.0"'
+    // 🟩 Added "ray[serve]" with quotes to pull down grpc and web serving dependencies
+    sh 'python3 -m pip install --break-system-packages "click<8.1.0" "typer==0.9.0" "ray[serve]"'
     
     sh '''
-        # 1. MAGICAL FIX: Tell Jenkins NOT to kill our background processes!
+        # 1. Tell Jenkins NOT to kill our background processes
         export JENKINS_NODE_COOKIE=dontKillMe
         
         # 2. Get the latest Model Run ID
@@ -69,24 +69,32 @@ pipeline {
         # 3. Stop any existing deployed models
         ray stop || true
         
-        # 4. Deploy the new model in the background
+        # 4. Deploy the new model in the background and capture its Process ID (PID)
         nohup python3 madewithml/serve.py --run_id $LATEST_RUN_ID > serve.log 2>&1 &
+        SERVE_PID=$!
         
-        # 5. ACTIVE POLLING: Wait for the server to become healthy
-        echo "Waiting for Ray Serve to initialize..."
+        # 5. DIAGNOSTIC POLLING: Wait for server or catch early crash
+        echo "Waiting for Ray Serve to initialize on port 8000..."
         TIMEOUT=120
         ELAPSED=0
         SLEEP_INTERVAL=2
 
-        # The curl command checks the health endpoint (/) 
-        # -s silences curl output, -f makes curl fail on HTTP errors (like 500 or 404)
-        while ! curl -s -f http://127.0.0.1:8080/ > /dev/null; do
+        while ! curl -s -f http://127.0.0.1:8000/ > /dev/null; do
+            # CRITICAL CHECK: Did the background process die?
+            if ! kill -0 $SERVE_PID 2>/dev/null; then
+                echo "❌ ERROR: serve.py crashed immediately on startup!"
+                echo "--- Printing serve.log for debugging ---"
+                cat serve.log
+                exit 1
+            fi
+
             if [ $ELAPSED -ge $TIMEOUT ]; then
                 echo "❌ ERROR: Server failed to start within $TIMEOUT seconds!"
                 echo "--- Printing serve.log for debugging ---"
                 cat serve.log
                 exit 1
             fi
+            
             echo "Server not ready yet. Retrying in $SLEEP_INTERVAL seconds... ($ELAPSED/$TIMEOUT)"
             sleep $SLEEP_INTERVAL
             ELAPSED=$((ELAPSED + SLEEP_INTERVAL))
