@@ -22,9 +22,26 @@ pipeline {
                  }
             }
             steps {
-                echo "Running training..."
-                sh '''
-                    python3 madewithml/train.py \
+                echo "Securing Python 3.10 hermetic environment for training workloads..."
+                sh '''#!/bin/bash
+                    # 1. Define persistent cache directory for speed
+                    export UV_CACHE_DIR="/var/jenkins_home/.uv_cache"
+                    mkdir -p "$UV_CACHE_DIR"
+
+                    # 2. Install uv package manager on host python
+                    python3 -m pip install uv --break-system-packages
+
+                    # 3. Establish the isolated runtime
+                    uv venv .venv --python 3.10
+                    
+                    # 4. Install exact project dependencies with legacy setuptools compatibility
+                    uv pip install "setuptools<81" -r requirements.txt
+
+                    # 5. Clear out legacy tracking metrics written by mismatched global system versions
+                    rm -rf mlruns/
+
+                    # 6. Execute training using the explicit virtual environment interpreter
+                    .venv/bin/python3 madewithml/train.py \
                         --experiment-name="llm-classification" \
                         --dataset-loc="$(pwd)/datasets/dataset.csv" \
                         --train-loop-config='{"dropout_p": 0.5, "lr": 1e-4, "lr_factor": 0.8, "lr_patience": 3, "num_epochs": 1, "batch_size": 2}' \
@@ -58,13 +75,13 @@ pipeline {
                     # 3. Create an isolated Python 3.10 runtime environment
                     uv venv .venv --python 3.10
                     
-                    # 4. CRITICAL FIX: Pin setuptools < 81 because setuptools 81+ completely removed 'pkg_resources'
+                    # 4. Pin setuptools < 81 to preserve legacy pkg_resources compatibility
                     uv pip install "setuptools<81" -r requirements.txt
 
-                    # 5. Prevent Jenkins from killing background tracking processes
+                    # 5. Prevent Jenkins from sweeping background tracking processes
                     export JENKINS_NODE_COOKIE=dontKillMe
                     
-                    # 6. Extract the latest trained experiment run ID
+                    # 6. Extract the latest trained experiment run ID using the identical environment
                     LATEST_RUN_ID=$(.venv/bin/python3 -c "import mlflow; from madewithml.config import MLFLOW_TRACKING_URI; mlflow.set_tracking_uri(MLFLOW_TRACKING_URI); runs=mlflow.search_runs(experiment_names=['llm-classification']); print(runs.iloc[0].run_id if not runs.empty else '')")
                     
                     if [ -z "$LATEST_RUN_ID" ]; then
