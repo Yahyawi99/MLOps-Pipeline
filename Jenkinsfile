@@ -33,10 +33,7 @@ pipeline {
         // =========================================
         stage('Model Development Workloads') {
             when {
-                anyOf {
-                    changeRequest()
-                    branch 'main'
-                }
+                changeRequest()
             }
             steps {
                 echo "Running training..."
