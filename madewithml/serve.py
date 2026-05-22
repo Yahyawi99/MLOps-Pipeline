@@ -9,6 +9,9 @@ from fastapi import FastAPI
 from ray import serve
 from starlette.requests import Request
 
+import json
+from numpyencoder import NumpyEncoder
+
 from madewithml import evaluate, predict
 from madewithml.config import MLFLOW_TRACKING_URI, mlflow
 
@@ -54,6 +57,30 @@ class ModelDeployment:
 
     @app.post("/predict/")
     async def _predict(self, request: Request):
+        data = await request.json()
+        
+        sample_ds = ray.data.from_items([
+            {
+                "title": data.get("title", ""), 
+                "description": data.get("description", ""), 
+                "tag": "other"
+            }
+        ])
+        
+        results = predict.predict_proba(ds=sample_ds, predictor=self.predictor)
+
+        # Apply custom logic
+        for i, result in enumerate(results):
+            pred = result["prediction"]
+            prob = result["probabilities"]
+            if prob[pred] < self.threshold:
+                results[i]["prediction"] = "other"
+
+        # --- CRITICAL FIX: Sanitize Numpy types to native Python types ---
+        safe_results = json.loads(json.dumps(results, cls=NumpyEncoder))
+        # ----------------------------------------------------------------
+
+        return {"results": safe_results}
         data = await request.json()
         
         # CRITICAL FIX 2: tag MUST be "other", not "". 
