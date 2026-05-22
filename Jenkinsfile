@@ -5,29 +5,11 @@ pipeline {
         PYTHONUNBUFFERED = '1'
         PYTHONPATH = "${WORKSPACE}"
         // Make sure your username is still set here!
-        GITHUB_USERNAME = 'your_github_username_here' 
+        GITHUB_USERNAME = 'Zorbiks' 
         RAY_SERVE_PROXY_READY_CHECK_TIMEOUT_S = '120'
     }
 
     stages {
-        // ==========================================
-        // 0. ENVIRONMENT SETUP
-        // ==========================================
-        stage('Install Global Dependencies') {
-            steps {
-                echo 'Installing dependencies directly into the Docker container...'
-                sh '''
-                    python3 -m pip install --upgrade pip wheel --root-user-action=ignore
-                    python3 -m pip install "setuptools<70.0.0" --root-user-action=ignore
-                    python3 -m pip install --no-cache-dir -r requirements.txt --root-user-action=ignore
-                    
-                    # MAGICAL FIX: Upgrade typer and click AFTER requirements.txt 
-                    # so the buggy version is permanently overwritten!
-                    python3 -m pip install --upgrade typer click --root-user-action=ignore
-                '''
-            }
-        }
-
         // =========================================
         // 1. WORKLOADS WORKFLOW
         // =========================================
