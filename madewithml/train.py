@@ -227,6 +227,9 @@ def train_model(
     train_ds = train_ds.materialize()
     val_ds = val_ds.materialize()
 
+    # Pass class_to_index via train_loop_config (metadata= removed in Ray Train v2)
+    train_loop_config["class_to_index"] = preprocessor.class_to_index
+
     # Trainer
     trainer = TorchTrainer(
         train_loop_per_worker=train_loop_per_worker,
@@ -235,7 +238,6 @@ def train_model(
         run_config=run_config,
         datasets={"train": train_ds, "val": val_ds},
         dataset_config=dataset_config,
-        metadata={"class_to_index": preprocessor.class_to_index},
     )
 
     # Train
