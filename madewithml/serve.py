@@ -72,9 +72,22 @@ if __name__ == "__main__":
     parser.add_argument("--run_id", help="run ID to use for serving.")
     parser.add_argument("--threshold", type=float, default=0.9, help="threshold for `other` class.")
     args = parser.parse_args()
-    ray.init(runtime_env={"env_vars": {"GITHUB_USERNAME": os.environ["GITHUB_USERNAME"]}})
+    
+    # Initialize Ray with the environment variables needed for the Model Registry
+    ray.init(runtime_env={"env_vars": {"GITHUB_USERNAME": os.environ.get("GITHUB_USERNAME", "")}})
+    
+    # Deploy the model
     serve.run(
         ModelDeployment.bind(run_id=args.run_id, threshold=args.threshold), 
         host="0.0.0.0", 
         port=8000
     )
+    
+    print("--- Deployment is live at http://0.0.0.0:8000 ---")
+    
+    # CRITICAL: Keep the script (and the local Ray cluster) alive
+    try:
+        while True:
+            time.sleep(60)
+    except KeyboardInterrupt:
+        serve.shutdown()
