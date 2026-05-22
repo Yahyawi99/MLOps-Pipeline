@@ -46,10 +46,11 @@ pipeline {
             not { changeRequest() }  // push to main only, not PRs
         }
     }
-           steps {
+
+    steps {
     echo "Push to main detected. Deploying application and updating docs..."
 
-    # 🟩 Added --break-system-packages to bypass PEP 668 restriction inside the container
+    // 🟩 Fixed comment syntax to use Groovy style (// instead of #)
     sh 'python3 -m pip install --break-system-packages "click<8.1.0" "typer==0.9.0"'
     
     sh '''
@@ -97,6 +98,7 @@ pipeline {
     // Build the documentation
     sh 'python3 -m mkdocs build'
 }
+
         }
     }
     
